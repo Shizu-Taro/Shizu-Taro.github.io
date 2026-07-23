@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ニュース読み上げ</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #1a1a2e;
+      min-height: 100vh;
+      font-family: 'Hiragino Kaku Gothic ProN', 'Arial', sans-serif;
+      color: #fff;
+      padding: 16px;
+      padding-bottom: 40px;
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      text-align: center;
+      letter-spacing: 2px;
+      color: #00ff88;
+      text-shadow: 0 0 10px #00ff88;
+      margin-bottom: 16px;
+    }
+
+    .panel {
+      max-width: 480px;
+      margin: 0 auto 16px auto;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(0, 255, 136, 0.3);
+      border-radius: 8px;
+      padding: 14px;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      font-size: 0.9rem;
+    }
+
+    .row:last-child { margin-bottom: 0; }
+
+    .row label { flex: 1; color: #ccc; }
+
+    select, input[type="range"] {
+      accent-color: #00ff88;
+    }
+
+    select {
+      background: #16162a;
+      color: #fff;
+      border: 1px solid rgba(0, 255, 136, 0.4);
+      border-radius: 4px;
+      padding: 4px 6px;
+    }
+
+    .btn-row {
+      max-width: 480px;
+      margin: 0 auto 16px auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+    }
+
+    button {
+      padding: 10px 18px;
+      background: #00ff88;
+      color: #1a1a2e;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.95rem;
+      font-weight: bold;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    button:active { background: #00cc6a; }
+
+    button:disabled {
+      background: #444;
+      color: #888;
+      cursor: default;
+    }
+
+    button.secondary {
+      background: transparent;
+      color: #00ff88;
+      border: 1px solid #00ff88;
+    }
+
+    #status {
+      max-width: 480px;
+      margin: 0 auto 16px auto;
+      text-align: center;
+      color: #ffcc00;
+      font-size: 0.85rem;
+      min-height: 20px;
+    }
+
+    #list {
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    .item {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .item.speaking {
+      background: rgba(0, 255, 136, 0.15);
+      border-color: #00ff88;
+    }
+
+    .item h2 {
+      font-size: 0.95rem;
+      font-weight: normal;
+      line-height: 1.5;
+      margin-bottom: 6px;
+    }
+
+    .item .desc {
+      font-size: 0.8rem;
+      color: #aaa;
+      line-height: 1.5;
+      margin-bottom: 8px;
+    }
+
+    .item .meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .item .meta a {
+      color: #55acee;
+      font-size: 0.75rem;
+      text-decoration: none;
+    }
+
+    .item .play-one {
+      padding: 4px 10px;
+      font-size: 0.75rem;
+    }
+
+    .empty {
+      text-align: center;
+      color: #666;
+      font-size: 0.85rem;
+      padding: 20px;
+    }
+
+    a.back {
+      display: block;
+      text-align: center;
+      margin-top: 24px;
+      color: #555;
+      font-size: 0.85rem;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>📰 ニュース読み上げ</h1>
+
+  <div class="panel">
+    <div class="row">
+      <label for="source-select">ニュースソース</label>
+      <select id="source-select">
+        <option value="0">NHKニュース</option>
+        <option value="1">Yahoo!ニューストピックス</option>
+      </select>
+    </div>
+    <div class="row">
+      <label for="exclude-crime">犯罪・事件のニュースを除外する</label>
+      <input type="checkbox" id="exclude-crime" checked>
+    </div>
+    <div class="row">
+      <label for="rate-range">読み上げ速度 <span id="rate-value">1.0</span>x</label>
+      <input type="range" id="rate-range" min="0.5" max="2" step="0.1" value="1">
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button id="fetch-btn">ニュースを取得</button>
+    <button id="play-all-btn" disabled>すべて読み上げ</button>
+    <button id="pause-btn" class="secondary" disabled>一時停止</button>
+    <button id="stop-btn" class="secondary" disabled>停止</button>
+  </div>
+
+  <div id="status"></div>
+
+  <div id="list"></div>
+
+  <a class="back" href="index.html">← トップページへ戻る</a>
+
+  <script>
+    const SOURCES = [
+      { name: 'NHKニュース', url: 'https://www.nhk.or.jp/rss/news/cat0.xml' },
+      { name: 'Yahoo!ニューストピックス', url: 'https://news.yahoo.co.jp/rss/topics/top-picks.xml' }
+    ];
+
+    // Keywords used to detect and exclude crime / incident related news.
+    const CRIME_KEYWORDS = [
+      '逮捕', '容疑', '疑い', '事件', '殺人', '殺害', '強盗', '窃盗', '詐欺',
+      '傷害', '暴行', '誘拐', '監禁', '放火', '薬物', '麻薬', '覚醒剤', '大麻',
+      '性犯罪', '痴漢', '盗撮', '恐喝', '脅迫', '汚職', '収賄', '贈賄', '横領',
+      '死体', '遺体', '犯罪', '凶悪', '立てこもり', '発砲', '銃撃', '爆破',
+      'テロ', '虐待', 'ストーカー', '起訴', '逮捕状', '家宅捜索', '詐取', '容疑者'
+    ];
+
+    const sourceSelect = document.getElementById('source-select');
+    const excludeCrime = document.getElementById('exclude-crime');
+    const rateRange = document.getElementById('rate-range');
+    const rateValue = document.getElementById('rate-value');
+    const fetchBtn = document.getElementById('fetch-btn');
+    const playAllBtn = document.getElementById('play-all-btn');
+    const pauseBtn = document.getElementById('pause-btn');
+    const stopBtn = document.getElementById('stop-btn');
+    const statusEl = document.getElementById('status');
+    const listEl = document.getElementById('list');
+
+    let articles = [];
+    let japaneseVoice = null;
+
+    function loadVoices() {
+      const voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+      japaneseVoice = voices.find(v => v.lang && v.lang.startsWith('ja')) || null;
+    }
+
+    if ('speechSynthesis' in window) {
+      loadVoices();
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+
+    rateRange.addEventListener('input', () => {
+      rateValue.textContent = parseFloat(rateRange.value).toFixed(1);
+    });
+
+    function stripHtml(html) {
+      const div = document.createElement('div');
+      div.innerHTML = html || '';
+      return (div.textContent || div.innerText || '').trim();
+    }
+
+    function isCrimeRelated(text) {
+      return CRIME_KEYWORDS.some(kw => text.includes(kw));
+    }
+
+    function setStatus(message) {
+      statusEl.textContent = message;
+    }
+
+    async function fetchNews() {
+      if (!('speechSynthesis' in window)) {
+        setStatus('お使いのブラウザは音声読み上げに対応していません。');
+        return;
+      }
+
+      fetchBtn.disabled = true;
+      playAllBtn.disabled = true;
+      pauseBtn.disabled = true;
+      stopBtn.disabled = true;
+      window.speechSynthesis.cancel();
+      listEl.innerHTML = '';
+      articles = [];
+
+      const selectedIndex = parseInt(sourceSelect.value, 10);
+      const order = [selectedIndex, ...SOURCES.map((_, i) => i).filter(i => i !== selectedIndex)];
+
+      for (const idx of order) {
+        const source = SOURCES[idx];
+        setStatus(`${source.name} から取得中...`);
+        try {
+          const apiUrl = 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(source.url);
+          const res = await fetch(apiUrl);
+          if (!res.ok) throw new Error('network error');
+          const data = await res.json();
+          if (data.status !== 'ok' || !Array.isArray(data.items) || data.items.length === 0) {
+            throw new Error('no items');
+          }
+
+          let items = data.items.map(item => ({
+            title: stripHtml(item.title),
+            description: stripHtml(item.description).slice(0, 120),
+            link: item.link
+          }));
+
+          const excluded = items.filter(a => isCrimeRelated(a.title + a.description)).length;
+
+          if (excludeCrime.checked) {
+            items = items.filter(a => !isCrimeRelated(a.title + a.description));
+          }
+
+          items = items.slice(0, 15);
+
+          if (items.length === 0) {
+            throw new Error('all filtered out');
+          }
+
+          articles = items;
+          renderList();
+          setStatus(`${source.name}: ${items.length}件取得（犯罪・事件関連 ${excluded}件を除外）`);
+          fetchBtn.disabled = false;
+          playAllBtn.disabled = false;
+          return;
+        } catch (err) {
+          continue;
+        }
+      }
+
+      setStatus('ニュースを取得できませんでした。時間をおいて再度お試しください。');
+      fetchBtn.disabled = false;
+    }
+
+    function renderList() {
+      listEl.innerHTML = '';
+      if (articles.length === 0) {
+        listEl.innerHTML = '<div class="empty">表示できるニュースがありません。</div>';
+        return;
+      }
+      articles.forEach((article, i) => {
+        const item = document.createElement('div');
+        item.className = 'item';
+        item.id = 'item-' + i;
+
+        const h2 = document.createElement('h2');
+        h2.textContent = article.title;
+
+        const desc = document.createElement('div');
+        desc.className = 'desc';
+        desc.textContent = article.description;
+
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+
+        const link = document.createElement('a');
+        link.href = article.link;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = '記事を読む';
+
+        const playOne = document.createElement('button');
+        playOne.className = 'play-one secondary';
+        playOne.textContent = '▶ 読む';
+        playOne.addEventListener('click', () => speakSingle(i));
+
+        meta.appendChild(link);
+        meta.appendChild(playOne);
+
+        item.appendChild(h2);
+        if (article.description) item.appendChild(desc);
+        item.appendChild(meta);
+
+        listEl.appendChild(item);
+      });
+    }
+
+    function makeUtterance(text, index) {
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'ja-JP';
+      if (japaneseVoice) utter.voice = japaneseVoice;
+      utter.rate = parseFloat(rateRange.value);
+      utter.onstart = () => {
+        document.querySelectorAll('.item.speaking').forEach(el => el.classList.remove('speaking'));
+        const el = document.getElementById('item-' + index);
+        if (el) {
+          el.classList.add('speaking');
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      };
+      utter.onend = () => {
+        const el = document.getElementById('item-' + index);
+        if (el) el.classList.remove('speaking');
+      };
+      return utter;
+    }
+
+    function speakSingle(index) {
+      window.speechSynthesis.cancel();
+      const article = articles[index];
+      const text = article.title + '。' + article.description;
+      window.speechSynthesis.speak(makeUtterance(text, index));
+      pauseBtn.disabled = false;
+      stopBtn.disabled = false;
+    }
+
+    function speakAll() {
+      window.speechSynthesis.cancel();
+      articles.forEach((article, i) => {
+        const text = article.title + '。' + article.description;
+        window.speechSynthesis.speak(makeUtterance(text, i));
+      });
+      pauseBtn.disabled = false;
+      stopBtn.disabled = false;
+      pauseBtn.textContent = '一時停止';
+    }
+
+    fetchBtn.addEventListener('click', fetchNews);
+    playAllBtn.addEventListener('click', speakAll);
+
+    pauseBtn.addEventListener('click', () => {
+      if (!window.speechSynthesis.speaking && !window.speechSynthesis.paused) return;
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+        pauseBtn.textContent = '一時停止';
+      } else {
+        window.speechSynthesis.pause();
+        pauseBtn.textContent = '再開';
+      }
+    });
+
+    stopBtn.addEventListener('click', () => {
+      window.speechSynthesis.cancel();
+      document.querySelectorAll('.item.speaking').forEach(el => el.classList.remove('speaking'));
+      pauseBtn.textContent = '一時停止';
+      pauseBtn.disabled = true;
+      stopBtn.disabled = true;
+    });
+  </script>
+</body>
+</html>
